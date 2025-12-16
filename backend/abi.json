@@ -1,0 +1,582 @@
+[
+  {
+    "inputs": [
+      {
+        "internalType": "address[]",
+        "name": "_owners",
+        "type": "address[]"
+      },
+      {
+        "internalType": "uint256",
+        "name": "_threshold",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "_minDelay",
+        "type": "uint256"
+      },
+      {
+        "internalType": "address",
+        "name": "_guardian",
+        "type": "address"
+      }
+    ],
+    "stateMutability": "nonpayable",
+    "type": "constructor"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "bytes32",
+        "name": "id",
+        "type": "bytes32"
+      },
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "proposer",
+        "type": "address"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint8",
+        "name": "kind",
+        "type": "uint8"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "eta",
+        "type": "uint256"
+      }
+    ],
+    "name": "GovernanceProposalCreated",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": false,
+        "internalType": "address",
+        "name": "newGuardian",
+        "type": "address"
+      }
+    ],
+    "name": "GuardianChanged",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "newMinDelay",
+        "type": "uint256"
+      }
+    ],
+    "name": "MinDelayChanged",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "owner",
+        "type": "address"
+      }
+    ],
+    "name": "OwnerAdded",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "owner",
+        "type": "address"
+      }
+    ],
+    "name": "OwnerRemoved",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [],
+    "name": "Paused",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "bytes32",
+        "name": "id",
+        "type": "bytes32"
+      },
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "signer",
+        "type": "address"
+      }
+    ],
+    "name": "ProposalApproved",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "bytes32",
+        "name": "id",
+        "type": "bytes32"
+      },
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "canceller",
+        "type": "address"
+      },
+      {
+        "indexed": false,
+        "internalType": "string",
+        "name": "reason",
+        "type": "string"
+      }
+    ],
+    "name": "ProposalCancelled",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "bytes32",
+        "name": "id",
+        "type": "bytes32"
+      },
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "proposer",
+        "type": "address"
+      },
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "to",
+        "type": "address"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "value",
+        "type": "uint256"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "eta",
+        "type": "uint256"
+      }
+    ],
+    "name": "ProposalCreated",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "bytes32",
+        "name": "id",
+        "type": "bytes32"
+      },
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "executor",
+        "type": "address"
+      },
+      {
+        "indexed": false,
+        "internalType": "bool",
+        "name": "success",
+        "type": "bool"
+      },
+      {
+        "indexed": false,
+        "internalType": "bytes",
+        "name": "ret",
+        "type": "bytes"
+      }
+    ],
+    "name": "ProposalExecuted",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "bytes32",
+        "name": "id",
+        "type": "bytes32"
+      },
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "signer",
+        "type": "address"
+      }
+    ],
+    "name": "ProposalRevoked",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [],
+    "name": "Resumed",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "newThreshold",
+        "type": "uint256"
+      }
+    ],
+    "name": "ThresholdChanged",
+    "type": "event"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "bytes32",
+        "name": "id",
+        "type": "bytes32"
+      }
+    ],
+    "name": "approve",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "bytes32",
+        "name": "id",
+        "type": "bytes32"
+      },
+      {
+        "internalType": "string",
+        "name": "reason",
+        "type": "string"
+      }
+    ],
+    "name": "cancel",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "bytes32",
+        "name": "id",
+        "type": "bytes32"
+      }
+    ],
+    "name": "execute",
+    "outputs": [],
+    "stateMutability": "payable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "bytes32",
+        "name": "id",
+        "type": "bytes32"
+      }
+    ],
+    "name": "getProposal",
+    "outputs": [
+      {
+        "components": [
+          {
+            "internalType": "address",
+            "name": "proposer",
+            "type": "address"
+          },
+          {
+            "internalType": "enum DelayedExecutionMultiSig.ProposalKind",
+            "name": "kind",
+            "type": "uint8"
+          },
+          {
+            "internalType": "address",
+            "name": "to",
+            "type": "address"
+          },
+          {
+            "internalType": "uint256",
+            "name": "value",
+            "type": "uint256"
+          },
+          {
+            "internalType": "bytes",
+            "name": "data",
+            "type": "bytes"
+          },
+          {
+            "internalType": "uint256",
+            "name": "eta",
+            "type": "uint256"
+          },
+          {
+            "internalType": "bool",
+            "name": "executed",
+            "type": "bool"
+          },
+          {
+            "internalType": "bool",
+            "name": "cancelled",
+            "type": "bool"
+          },
+          {
+            "internalType": "uint256",
+            "name": "approvals",
+            "type": "uint256"
+          }
+        ],
+        "internalType": "struct DelayedExecutionMultiSig.Proposal",
+        "name": "",
+        "type": "tuple"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "guardian",
+    "outputs": [
+      {
+        "internalType": "address",
+        "name": "",
+        "type": "address"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "",
+        "type": "address"
+      }
+    ],
+    "name": "isOwner",
+    "outputs": [
+      {
+        "internalType": "bool",
+        "name": "",
+        "type": "bool"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "minDelayGlobal",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "name": "ownerList",
+    "outputs": [
+      {
+        "internalType": "address",
+        "name": "",
+        "type": "address"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "owners",
+    "outputs": [
+      {
+        "internalType": "address[]",
+        "name": "",
+        "type": "address[]"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "pause",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "paused",
+    "outputs": [
+      {
+        "internalType": "bool",
+        "name": "",
+        "type": "bool"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "proposalExpiryDuration",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "bytes",
+        "name": "encoded",
+        "type": "bytes"
+      },
+      {
+        "internalType": "uint256",
+        "name": "delay",
+        "type": "uint256"
+      }
+    ],
+    "name": "proposeGovernance",
+    "outputs": [
+      {
+        "internalType": "bytes32",
+        "name": "id",
+        "type": "bytes32"
+      }
+    ],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "to",
+        "type": "address"
+      },
+      {
+        "internalType": "uint256",
+        "name": "value",
+        "type": "uint256"
+      },
+      {
+        "internalType": "bytes",
+        "name": "data",
+        "type": "bytes"
+      },
+      {
+        "internalType": "uint256",
+        "name": "delay",
+        "type": "uint256"
+      }
+    ],
+    "name": "proposeTransaction",
+    "outputs": [
+      {
+        "internalType": "bytes32",
+        "name": "id",
+        "type": "bytes32"
+      }
+    ],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "resume",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "bytes32",
+        "name": "id",
+        "type": "bytes32"
+      }
+    ],
+    "name": "revoke",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "threshold",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "stateMutability": "payable",
+    "type": "receive"
+  }
+]

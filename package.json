@@ -1,0 +1,45 @@
+{
+  "name": "delayed-multisig-fullstack",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "clean": "rimraf cache artifacts",
+    "compile": "hardhat compile",
+    "test": "hardhat test",
+    "node": "hardhat node",
+    "deploy:local": "hardhat run scripts/deploy.ts --network localhost",
+    "deploy:sepolia": "hardhat run scripts/deploy.ts --network sepolia",
+    "simulate:local": "hardhat run scripts/simulate.ts --network localhost",
+    "measure:gas": "hardhat run scripts/measureGas.ts --network localhost",
+    "backend": "node backend/index.js",
+    "serve:ui": "node backend/index.js",
+    "dev": "cd frontend && npm run dev"
+  },
+  "devDependencies": {
+    "@nomicfoundation/hardhat-toolbox": "^5.0.0",
+    "@nomicfoundation/hardhat-verify": "^2.0.0",
+    "@typechain/ethers-v6": "^0.5.1",
+    "@typechain/hardhat": "^9.1.0",
+    "@types/chai": "^4.3.11",
+    "@types/mocha": "^10.0.6",
+    "@types/node": "^20.11.30",
+    "chai": "^4.4.1",
+    "hardhat": "^2.22.9",
+    "rimraf": "^5.0.5",
+    "ts-node": "^10.9.2",
+    "typechain": "^8.3.2",
+    "typescript": "^5.6.3"
+  },
+  "dependencies": {
+    "@emotion/react": "^11.14.0",
+    "@emotion/styled": "^11.14.1",
+    "@rainbow-me/rainbowkit": "^2.2.9",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "ethers": "^6.15.0",
+    "express": "^4.19.2",
+    "viem": "^2.38.6",
+    "wagmi": "^2.19.2"
+  }
+}
