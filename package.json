@@ -14,7 +14,8 @@
     "measure:gas": "hardhat run scripts/measureGas.ts --network localhost",
     "backend": "node backend/index.js",
     "serve:ui": "node backend/index.js",
-    "dev": "cd frontend && npm run dev"
+    "dev": "cd frontend && npm run dev",
+    "dev:all": "npm run backend & npm run dev"
   },
   "devDependencies": {
     "@nomicfoundation/hardhat-toolbox": "^5.0.0",
@@ -39,6 +40,7 @@
     "dotenv": "^16.4.5",
     "ethers": "^6.15.0",
     "express": "^4.19.2",
+    "nodemailer": "^7.0.11",
     "viem": "^2.38.6",
     "wagmi": "^2.19.2"
   }

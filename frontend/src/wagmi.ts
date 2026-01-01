@@ -1,5 +1,5 @@
 import { http } from "viem";
-import { sepolia } from "wagmi/chains";
+import { sepolia, hardhat, localhost } from "wagmi/chains";
 import { createConfig, type Config } from "wagmi";
 import { getDefaultWallets } from "@rainbow-me/rainbowkit";
 
@@ -24,8 +24,10 @@ const getSepoliaRPC = () => {
 
 export const wagmiConfig: Config = createConfig({
   connectors,
-  chains: [sepolia],
+  chains: [localhost, hardhat, sepolia],
   transports: {
+    [localhost.id]: http("http://127.0.0.1:8545"),
+    [hardhat.id]: http("http://127.0.0.1:8545"),
     [sepolia.id]: getSepoliaRPC(),
   },
   ssr: true,

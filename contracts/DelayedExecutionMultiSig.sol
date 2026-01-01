@@ -96,6 +96,15 @@ contract DelayedExecutionMultiSig {
     // PROPOSALS
     // ------------------
 
+    /**
+     * @notice Creates a new transaction proposal.
+     * @dev Generates a unique ID based on parameters, nonce (block.number), and sender.
+     * @param to The target address for the transaction.
+     * @param value The amount of ETH to send.
+     * @param data The calldata to execute.
+     * @param delay The delay in seconds (must be >= global minDelay).
+     * @return id The generated proposal ID.
+     */
     function proposeTransaction(address to, uint256 value, bytes calldata data, uint256 delay)
         external
         onlyOwner
@@ -150,6 +159,11 @@ contract DelayedExecutionMultiSig {
         emit GovernanceProposalCreated(id, msg.sender, uint8(encoded[0]), eta);
     }
 
+    /**
+     * @notice Approves a pending proposal.
+     * @dev Increases approval count. If count >= threshold, the proposal effectively becomes queued.
+     * @param id The proposal ID to approve.
+     */
     function approve(bytes32 id)
         external
         onlyOwner
@@ -166,6 +180,11 @@ contract DelayedExecutionMultiSig {
         emit ProposalApproved(id, msg.sender);
     }
 
+    /**
+     * @notice Revokes a previous approval.
+     * @dev Can only be done before execution.
+     * @param id The proposal ID to revoke.
+     */
     function revoke(bytes32 id)
         external
         onlyOwner
@@ -184,6 +203,12 @@ contract DelayedExecutionMultiSig {
     }
 
     // Cancel is allowed always for guardian even while paused
+    /**
+     * @notice Cancels a proposal.
+     * @dev Callable by Guardian or Owners. Guardian can cancel even when paused to stop attacks.
+     * @param id The proposal ID.
+     * @param reason The reason for cancellation (emitted in event).
+     */
     function cancel(bytes32 id, string calldata reason)
         external
     {
@@ -197,6 +222,11 @@ contract DelayedExecutionMultiSig {
         emit ProposalCancelled(id, msg.sender, reason);
     }
 
+    /**
+     * @notice Executes a ready proposal.
+     * @dev Checks: 1) Quorum met. 2) ETA passed. 3) Not expired. 4) Not cancelled/executed.
+     * @param id The proposal ID to execute.
+     */
     function execute(bytes32 id)
         external
         payable

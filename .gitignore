@@ -33,3 +33,5 @@ yarn-error.log*
 cache
 artifacts
 typechain-types
+backend/notifications.json
+backend/risk-state.json

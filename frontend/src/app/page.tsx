@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useAccount } from "wagmi";
 import { ConnectButton } from "@rainbow-me/rainbowkit";
 import { Providers } from "./providers";
@@ -9,6 +9,7 @@ import {
   writeContract,
   waitForTransactionReceipt,
   readContract,
+  signMessage,
 } from "@wagmi/core";
 import { isAddressEqual, encodeAbiParameters } from "viem";
 import abi from "../../abi/abi.json";
@@ -46,18 +47,28 @@ async function retryWithBackoff<T>(
 }
 
 /* ------------------------------------------------------------------
-   UPDATED PROPOSAL INTERFACE
+   TYPES
 ------------------------------------------------------------------*/
+type Risk = {
+  id: string;
+  score: number;
+  level: "LOW" | "MEDIUM" | "HIGH";
+  reasons: string[];
+  signals?: any;
+  computedAt: number;
+};
+
 interface Proposal {
   id: string;
   kind: "tx" | "gov";
-  govKind?: number; // 1–5 for governance
+  govKind?: number;
   to: string | null;
   value: string;
   eta: number;
   approvals?: number;
   cancelled: boolean;
   executed: boolean;
+  risk?: Risk | null;
 }
 
 function PageContent() {
@@ -73,18 +84,66 @@ function PageContent() {
   const [paused, setPaused] = useState(false);
   const [guardian, setGuardian] = useState<`0x${string}` | null>(null);
 
+  // optional debug
+  const [readErr, setReadErr] = useState<string>("");
+
   // governance form
   const [govAction, setGovAction] = useState("");
   const [govArg, setGovArg] = useState("");
   const [govDelay, setGovDelay] = useState("");
 
+  // guardian-only risk auth (signature + timestamp)
+  const [riskAuth, setRiskAuth] = useState<{ ts: number; sig: `0x${string}` } | null>(null);
+
   const { address: userAddress } = useAccount();
 
+  const isGuardian = useMemo(() => {
+    return userAddress && guardian ? isAddressEqual(userAddress, guardian) : false;
+  }, [userAddress, guardian]);
+
   /* ------------------------------------------------------------------
-     FETCH PAUSED
+     EXACT MESSAGE MUST MATCH BACKEND buildGuardianMessage(ts)
+  ------------------------------------------------------------------*/
+  const buildGuardianMessage = (ts: number) =>
+    `Guardian access for risk data.\nContract: ${CONTRACT_ADDRESS}\nTimestamp: ${ts}`;
+
+  // ✅ FIX: Always return Record<string,string> (no undefined values, no union)
+  function guardianHeadersOrEmpty(): Record<string, string> {
+    if (!riskAuth) return {};
+
+    // backend allows ±300s; we auto-lock earlier to avoid random failures
+    const now = Math.floor(Date.now() / 1000);
+    if (Math.abs(now - riskAuth.ts) > 240) {
+      setRiskAuth(null);
+      return {};
+    }
+
+    return {
+      "x-guardian-ts": String(riskAuth.ts),
+      "x-guardian-signature": riskAuth.sig,
+    };
+  }
+
+  /* ------------------------------------------------------------------
+     BACKEND INFO FALLBACK (fixes "buttons missing")
+  ------------------------------------------------------------------*/
+  const fetchBackendInfo = async () => {
+    try {
+      const r = await fetch(`${BACKEND_URL}/info`);
+      const j = await r.json();
+      if (j?.guardian) setGuardian(j.guardian as `0x${string}`);
+      if (typeof j?.paused === "boolean") setPaused(Boolean(j.paused));
+    } catch {
+      // ignore if backend is down
+    }
+  };
+
+  /* ------------------------------------------------------------------
+     FETCH PAUSED (on-chain, with fallback)
   ------------------------------------------------------------------*/
   const fetchPaused = async () => {
     try {
+      setReadErr("");
       const pausedStatus = await retryWithBackoff(() =>
         readContract(wagmiConfig, {
           address: CONTRACT_ADDRESS,
@@ -93,14 +152,18 @@ function PageContent() {
         })
       );
       setPaused(pausedStatus as boolean);
-    } catch {}
+    } catch (e: any) {
+      setReadErr(`paused() read failed: ${e?.message || "unknown"}`);
+      await fetchBackendInfo();
+    }
   };
 
   /* ------------------------------------------------------------------
-     FETCH GUARDIAN
+     FETCH GUARDIAN (on-chain, with fallback)
   ------------------------------------------------------------------*/
   const fetchGuardian = async () => {
     try {
+      setReadErr("");
       const g = await retryWithBackoff(() =>
         readContract(wagmiConfig, {
           address: CONTRACT_ADDRESS,
@@ -109,11 +172,42 @@ function PageContent() {
         })
       );
       setGuardian(g as `0x${string}`);
-    } catch {}
+    } catch (e: any) {
+      setReadErr(`guardian() read failed: ${e?.message || "unknown"}`);
+      await fetchBackendInfo();
+    }
   };
 
-  const isGuardian =
-    userAddress && guardian ? isAddressEqual(userAddress, guardian) : false;
+  /* ------------------------------------------------------------------
+     UNLOCK / LOCK RISK VIEW (guardian-only)
+  ------------------------------------------------------------------*/
+  const toggleRiskView = async () => {
+    if (!isGuardian) {
+      alert("❌ Only guardian can unlock risk view");
+      return;
+    }
+
+    // lock
+    if (riskAuth) {
+      setRiskAuth(null);
+      await fetchProposals();
+      return;
+    }
+
+    // unlock
+    try {
+      const ts = Math.floor(Date.now() / 1000);
+      const message = buildGuardianMessage(ts);
+
+      const sig = await signMessage(wagmiConfig, { message });
+      setRiskAuth({ ts, sig: sig as `0x${string}` });
+
+      await fetchProposals({ forceRisk: true, ts, sig: sig as `0x${string}` });
+    } catch (e) {
+      console.error(e);
+      alert("❌ Unlock failed (signature rejected or wallet issue)");
+    }
+  };
 
   /* ------------------------------------------------------------------
      PAUSE / RESUME
@@ -131,23 +225,36 @@ function PageContent() {
       await waitForTransactionReceipt(wagmiConfig, { hash: tx });
       await fetchPaused();
       alert(`✅ ${fn} OK`);
-    } catch {
-      alert(`❌ Failed to ${fn}`);
+    } catch (e: any) {
+      alert(`❌ Failed to ${fn}: ${e?.message || ""}`);
     }
   };
 
   /* ------------------------------------------------------------------
      FETCH PROPOSALS
+     @notice Fetches proposal IDs and details from Backend.
+     @dev If Guardian is active/unlocked, injects signature headers for risk data.
   ------------------------------------------------------------------*/
-  const fetchProposals = async () => {
+  const fetchProposals = async (opts?: { forceRisk?: boolean; ts?: number; sig?: `0x${string}` }) => {
     setLoading(true);
     try {
       const res = await fetch(`${BACKEND_URL}/proposal-ids`);
       const { ids } = await res.json();
 
+      let headers: Record<string, string> = {};
+
+      if (opts?.forceRisk && opts.ts && opts.sig) {
+        headers = {
+          "x-guardian-ts": String(opts.ts),
+          "x-guardian-signature": opts.sig,
+        };
+      } else if (riskAuth && isGuardian) {
+        headers = guardianHeadersOrEmpty(); // ✅ now always Record<string,string>
+      }
+
       const data = await Promise.all(
-        ids.map(async (id: string) => {
-          const r = await fetch(`${BACKEND_URL}/proposals/${id}`);
+        (ids as string[]).map(async (id: string) => {
+          const r = await fetch(`${BACKEND_URL}/proposals/${id}`, { headers });
           return await r.json();
         })
       );
@@ -209,6 +316,8 @@ function PageContent() {
 
   /* ------------------------------------------------------------------
      SUBMIT GOVERNANCE PROPOSAL
+     @notice Encodes governance actions (byte prefix + ABI encoded args).
+     @dev 0x01=AddOwner, 0x02=RemoveOwner, 0x03=SetThreshold, etc.
   ------------------------------------------------------------------*/
   async function submitGovernanceProposal() {
     try {
@@ -218,42 +327,27 @@ function PageContent() {
       switch (govAction) {
         case "addOwner":
           prefix = "0x01";
-          encodedArg = encodeAbiParameters(
-            [{ type: "address" }],
-            [govArg as `0x${string}`]
-          );
+          encodedArg = encodeAbiParameters([{ type: "address" }], [govArg as `0x${string}`]);
           break;
 
         case "removeOwner":
           prefix = "0x02";
-          encodedArg = encodeAbiParameters(
-            [{ type: "address" }],
-            [govArg as `0x${string}`]
-          );
+          encodedArg = encodeAbiParameters([{ type: "address" }], [govArg as `0x${string}`]);
           break;
 
         case "setThreshold":
           prefix = "0x03";
-          encodedArg = encodeAbiParameters(
-            [{ type: "uint256" }],
-            [BigInt(govArg)]
-          );
+          encodedArg = encodeAbiParameters([{ type: "uint256" }], [BigInt(govArg)]);
           break;
 
         case "setMinDelayGlobal":
           prefix = "0x04";
-          encodedArg = encodeAbiParameters(
-            [{ type: "uint256" }],
-            [BigInt(govArg)]
-          );
+          encodedArg = encodeAbiParameters([{ type: "uint256" }], [BigInt(govArg)]);
           break;
 
         case "setGuardian":
           prefix = "0x05";
-          encodedArg = encodeAbiParameters(
-            [{ type: "address" }],
-            [govArg as `0x${string}`]
-          );
+          encodedArg = encodeAbiParameters([{ type: "address" }], [govArg as `0x${string}`]);
           break;
 
         default:
@@ -289,17 +383,20 @@ function PageContent() {
   ------------------------------------------------------------------*/
   useEffect(() => {
     const load = async () => {
+      setRiskAuth(null);
+      await fetchBackendInfo();
       await fetchPaused();
-      await new Promise((r) => setTimeout(r, 500));
+      await new Promise((r) => setTimeout(r, 300));
       await fetchGuardian();
-      await new Promise((r) => setTimeout(r, 500));
+      await new Promise((r) => setTimeout(r, 300));
       await fetchProposals();
     };
     load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userAddress]);
 
   /* ------------------------------------------------------------------
-     UPDATED FILTER LOGIC
+     FILTER
   ------------------------------------------------------------------*/
   const searchLower = search.toLowerCase();
   const filteredProposals = proposals.filter(
@@ -308,12 +405,14 @@ function PageContent() {
       (p.to && p.to.toLowerCase().includes(searchLower))
   );
 
+  const showRiskColumn = isGuardian;
+  const riskUnlocked = Boolean(riskAuth);
+
   /* ------------------------------------------------------------------
      UI
   ------------------------------------------------------------------*/
   return (
     <main className="p-4 max-w-5xl mx-auto">
-
       {/* HEADER */}
       <div className="flex justify-between items-center mb-4">
         <h1 className="text-2xl font-bold">Delayed MultiSig Wallet</h1>
@@ -331,7 +430,7 @@ function PageContent() {
         />
       </div>
 
-      {/* STATUS */}
+      {/* STATUS + GUARDIAN CONTROLS */}
       <div className="mb-4">
         <p className="text-sm">
           Status:{" "}
@@ -340,6 +439,13 @@ function PageContent() {
           ) : (
             <span className="text-green-600 font-semibold">Active</span>
           )}
+        </p>
+
+        {/* debug */}
+        <p className="text-xs text-gray-500 mt-1">
+          connected: {userAddress || "—"} | guardian: {guardian || "—"} | isGuardian:{" "}
+          {isGuardian ? "true" : "false"}
+          {readErr ? ` | ⚠ ${readErr}` : ""}
         </p>
 
         {guardian && isGuardian && (
@@ -358,6 +464,14 @@ function PageContent() {
               onClick={() => handlePauseResume("resume")}
             >
               Resume
+            </button>
+
+            <button
+              className="bg-black text-white px-4 py-1 rounded"
+              onClick={toggleRiskView}
+              title="Guardian-only. Requires message signature."
+            >
+              {riskUnlocked ? "Lock Risk View" : "Unlock Risk View"}
             </button>
           </div>
         )}
@@ -396,7 +510,6 @@ function PageContent() {
         <h2 className="text-lg font-semibold mb-2">Governance Proposal</h2>
 
         <div className="flex flex-col gap-3">
-
           <select
             className="border p-2"
             value={govAction}
@@ -407,7 +520,6 @@ function PageContent() {
             <option value="removeOwner">Remove Owner</option>
             <option value="setThreshold">Change Threshold</option>
             <option value="setMinDelayGlobal">Change Min Delay</option>
-            {/* <option>Change Guardian</option> */}
           </select>
 
           {govAction && (
@@ -417,7 +529,7 @@ function PageContent() {
                 govAction === "setThreshold" || govAction === "setMinDelayGlobal"
                   ? "Number"
                   : "Address (0x...)"
-              }              
+              }
               value={govArg}
               onChange={(e) => setGovArg(e.target.value)}
             />
@@ -453,55 +565,56 @@ function PageContent() {
               <th className="p-2">To</th>
               <th className="p-2">Value</th>
               <th className="p-2">ETA</th>
+              {showRiskColumn && <th className="p-2">Risk</th>}
               <th className="p-2">Status</th>
               <th className="p-2">Actions</th>
             </tr>
           </thead>
 
-          {/* 🔥 UPDATED PROPOSAL ROWS */}
           <tbody>
             {filteredProposals.map((p, i) => (
               <tr key={i} className="border-t border-gray-600">
-
-                {/* ID */}
                 <td className="p-2 font-mono text-xs">{p.id.slice(0, 12)}…</td>
 
-                {/* TYPE */}
                 <td className="p-2">
                   {p.kind === "gov" ? (
-                    <span className="text-purple-600 font-semibold">
-                      Gov ({p.govKind})
-                    </span>
+                    <span className="text-purple-600 font-semibold">Gov ({p.govKind})</span>
                   ) : (
                     <span className="text-blue-600 font-semibold">Tx</span>
                   )}
                 </td>
 
-                {/* TO */}
+                <td className="p-2">{p.kind === "tx" ? p.to : "—"}</td>
+                <td className="p-2">{p.kind === "tx" ? p.value : "—"}</td>
+                <td className="p-2">{new Date(p.eta * 1000).toLocaleString()}</td>
+
+                {showRiskColumn && (
+                  <td className="p-2">
+                    {!riskUnlocked ? (
+                      <span className="text-gray-500">🔒</span>
+                    ) : p.risk ? (
+                      <span
+                        className={
+                          p.risk.level === "HIGH"
+                            ? "text-red-600 font-semibold"
+                            : p.risk.level === "MEDIUM"
+                              ? "text-yellow-700 font-semibold"
+                              : "text-green-700 font-semibold"
+                        }
+                        title={p.risk.reasons?.join("\n")}
+                      >
+                        {p.risk.level} ({p.risk.score}/100)
+                      </span>
+                    ) : (
+                      <span className="text-gray-500">—</span>
+                    )}
+                  </td>
+                )}
+
                 <td className="p-2">
-                  {p.kind === "tx" ? p.to : "—"}
+                  {p.cancelled ? "❌ Cancelled" : p.executed ? "✅ Executed" : "⏳ Pending"}
                 </td>
 
-                {/* VALUE */}
-                <td className="p-2">
-                  {p.kind === "tx" ? p.value : "—"}
-                </td>
-
-                {/* ETA */}
-                <td className="p-2">
-                  {new Date(p.eta * 1000).toLocaleString()}
-                </td>
-
-                {/* STATUS */}
-                <td className="p-2">
-                  {p.cancelled
-                    ? "❌ Cancelled"
-                    : p.executed
-                    ? "✅ Executed"
-                    : "⏳ Pending"}
-                </td>
-
-                {/* ACTIONS */}
                 <td className="p-2 flex gap-2 flex-wrap">
                   {!p.executed && !p.cancelled && (
                     <>
@@ -535,13 +648,11 @@ function PageContent() {
                     </>
                   )}
                 </td>
-
               </tr>
             ))}
           </tbody>
         </table>
       )}
-
     </main>
   );
 }
@@ -553,4 +664,3 @@ export default function Page() {
     </Providers>
   );
 }
-
