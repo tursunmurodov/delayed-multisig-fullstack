@@ -45,12 +45,8 @@ if (!CONTRACT_ADDRESS) throw new Error("❌ CONTRACT_ADDRESS missing in .env");
 if (!PRIVATE_KEY) throw new Error("❌ PRIVATE_KEY missing in .env");
 
 // ------------------------------------------------------------
-// EMAIL CONFIG (guardian-only risk + owners normal)
-// .env (recommended):
-//   GUARDIAN_EMAIL=guardian@email
-//   OWNER_EMAILS=o1@email,o2@email
-// legacy fallback:
-//   NOTIFY_EMAILS=...
+// Email configuration for notifications: 
+// owners receive standard updates, while the guardian also receives risk-related alerts.
 // ------------------------------------------------------------
 const GUARDIAN_EMAIL = (process.env.GUARDIAN_EMAIL || "").trim();
 const OWNER_EMAILS = (process.env.OWNER_EMAILS || "")
@@ -113,8 +109,7 @@ async function sendEmailTo(toList, subject, text) {
 }
 
 // ------------------------------------------------------------
-// NOTIFICATION STATE (avoid duplicate emails)
-// Stored in backend/notifications.json
+// NOTIFICATION STATE (avoid duplicate emails) and Stored in backend/notifications.json (notifications.json will appear auto!)
 // ------------------------------------------------------------
 const notificationsFile = path.join(__dirname, "notifications.json");
 
@@ -177,7 +172,7 @@ app.use(express.json());
 app.use(express.static(path.join(__dirname, "public")));
 
 // ------------------------------------------------------------
-// IN-MEMORY PROPOSAL DB
+// IN-MEMORY PROPOSAL DB 
 // ------------------------------------------------------------
 const cache = new Map();
 
@@ -217,10 +212,9 @@ async function fetchOnchainProposal(id) {
 }
 
 // ------------------------------------------------------------
-// GUARDIAN AUTH (signature gate)
-// Frontend will send:
-//   x-guardian-ts: <unix seconds>
-//   x-guardian-signature: <signature of message below>
+// GUARDIAN AUTH (signature gate) where frontend will send:
+//   x-guardian-ts: <unix seconds> = timestamp used to prevent replay attacks
+//   x-guardian-signature: <signature of message below> = guardian’s signature proving the request is authentic
 // ------------------------------------------------------------
 function buildGuardianMessage(ts) {
   return `Guardian access for risk data.\nContract: ${CONTRACT_ADDRESS}\nTimestamp: ${ts}`;
@@ -264,7 +258,7 @@ async function isGuardianRequest(req) {
 // Stored in backend/risk-state.json
 // Optional env:
 //   RISK_TIMEZONE=Europe/Riga
-//   RISK_BLACKLIST=0xabc...,0xdef...
+//   RISK_BLACKLIST=0xabc...,0xdef... (can be filled with more variants if needed!)
 // ------------------------------------------------------------
 const riskFile = path.join(__dirname, "risk-state.json");
 
@@ -297,11 +291,11 @@ const BLACKLIST = (process.env.RISK_BLACKLIST || "")
   .map((s) => s.trim().toLowerCase())
   .filter(Boolean);
 
-// Always-on blacklist
-if (!BLACKLIST.includes("0x0000000000000000000000000000000000000000"))
+// Always-on blacklist 
+if (!BLACKLIST.includes("0x0000000000000000000000000000000000000000")) 
   BLACKLIST.push("0x0000000000000000000000000000000000000000");
 if (!BLACKLIST.includes("0x000000000000000000000000000000000000dead"))
-  BLACKLIST.push("0x000000000000000000000000000000000000dead");
+  BLACKLIST.push("0x000000000000000000000000000000000000dead"); 
 
 function clamp(n, a, b) {
   return Math.max(a, Math.min(b, n));
@@ -365,7 +359,7 @@ async function computeRisk(id) {
   const proposer = (p.proposer || "").toLowerCase();
   const kind = Number(p.kind); // 0 tx, 1 gov
 
-  // ensure containers exist
+  // ensure containers exist (if they are missing need to initialize risk state containers !)
   if (!riskState.seenRecipients) riskState.seenRecipients = {};
   if (!riskState.proposerStats) riskState.proposerStats = {};
   if (!riskState.proposalMeta) riskState.proposalMeta = {};
@@ -451,7 +445,7 @@ async function computeRisk(id) {
   }
 
   // ---------------------------
-  // GOVERNANCE BRANCH (usually HIGH by nature)
+  // GOVERNANCE BRANCH (usually HIGH by nature but can config can be changed if needed !)
   // ---------------------------
   if (kind === 1) {
     let score = 60;
