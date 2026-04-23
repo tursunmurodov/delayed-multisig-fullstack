@@ -10,8 +10,8 @@ async function main() {
   console.log("📤 Deploying with signer:", signer.address);
 
   const owners = [
-    "0xe5fDA4B5DFC9cF0e5D4E6387eb7D9a8D9e6B16d0",  // Account 1
-    "0x66e46455Cd0cFCf5860B737Ec9Fd1108cCb33943", // Owner 2
+    "0xe5fDA4B5DFC9cF0e5D4E6387eb7D9a8D9e6B16d0",  // Account 1 (use your own/test wallet addresses not!)
+    "0x66e46455Cd0cFCf5860B737Ec9Fd1108cCb33943", // Owner 2 (use your own/test wallet addresses not!)
   ];
   const threshold = 2;
   const minDelay = 60;
