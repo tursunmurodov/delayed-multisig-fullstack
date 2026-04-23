@@ -19,23 +19,18 @@ import path from "path";
 import nodemailer from "nodemailer";
 import { fileURLToPath } from "url";
 
-// ------------------------------------------------------------
 // PATHS
-// ------------------------------------------------------------
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 // Load ABI
-
 const abiPath = path.join(__dirname, "abi.json");
 const abi = JSON.parse(fs.readFileSync(abiPath, "utf8"));
 
 // Load ENV
 dotenv.config({ path: path.join(__dirname, ".env") });
 
-// ------------------------------------------------------------
 // ENV VARIABLES
-// ------------------------------------------------------------
 const RPC_URL = process.env.RPC_URL;
 const CONTRACT_ADDRESS = process.env.CONTRACT_ADDRESS;
 const PRIVATE_KEY = process.env.PRIVATE_KEY;
@@ -44,10 +39,7 @@ if (!RPC_URL) throw new Error("❌ RPC_URL missing in .env");
 if (!CONTRACT_ADDRESS) throw new Error("❌ CONTRACT_ADDRESS missing in .env");
 if (!PRIVATE_KEY) throw new Error("❌ PRIVATE_KEY missing in .env");
 
-// ------------------------------------------------------------
 // Email configuration for notifications: 
-// owners receive standard updates, while the guardian also receives risk-related alerts.
-// ------------------------------------------------------------
 const GUARDIAN_EMAIL = (process.env.GUARDIAN_EMAIL || "").trim();
 const OWNER_EMAILS = (process.env.OWNER_EMAILS || "")
   .split(",")
@@ -108,9 +100,7 @@ async function sendEmailTo(toList, subject, text) {
   }
 }
 
-// ------------------------------------------------------------
 // NOTIFICATION STATE (avoid duplicate emails) and Stored in backend/notifications.json (notifications.json will appear auto!)
-// ------------------------------------------------------------
 const notificationsFile = path.join(__dirname, "notifications.json");
 
 function loadNotifyState() {
@@ -152,9 +142,7 @@ function clearEtaTimer(id) {
   etaTimers.delete(id);
 }
 
-// ------------------------------------------------------------
 // BLOCKCHAIN SETUP
-// ------------------------------------------------------------
 console.log("🔗 Connecting to Sepolia RPC...");
 const provider = new ethers.JsonRpcProvider(RPC_URL);
 
@@ -163,17 +151,13 @@ console.log("🔐 Backend signer:", wallet.address);
 
 const contract = new ethers.Contract(CONTRACT_ADDRESS, abi, wallet);
 
-// ------------------------------------------------------------
 // EXPRESS APP
-// ------------------------------------------------------------
 const app = express();
 app.use(cors());
 app.use(express.json());
 app.use(express.static(path.join(__dirname, "public")));
 
-// ------------------------------------------------------------
 // IN-MEMORY PROPOSAL DB 
-// ------------------------------------------------------------
 const cache = new Map();
 
 function upsert(id, patch) {
@@ -183,9 +167,7 @@ function upsert(id, patch) {
   return updated;
 }
 
-// ------------------------------------------------------------
 // HELPERS
-// ------------------------------------------------------------
 function fmtTime(unix) {
   if (!unix || Number(unix) <= 0) return "N/A";
   return new Date(Number(unix) * 1000).toLocaleString();
@@ -211,11 +193,10 @@ async function fetchOnchainProposal(id) {
   };
 }
 
-// ------------------------------------------------------------
 // GUARDIAN AUTH (signature gate) where frontend will send:
 //   x-guardian-ts: <unix seconds> = timestamp used to prevent replay attacks
 //   x-guardian-signature: <signature of message below> = guardian’s signature proving the request is authentic
-// ------------------------------------------------------------
+
 function buildGuardianMessage(ts) {
   return `Guardian access for risk data.\nContract: ${CONTRACT_ADDRESS}\nTimestamp: ${ts}`;
 }
@@ -253,13 +234,9 @@ async function isGuardianRequest(req) {
   }
 }
 
-// ------------------------------------------------------------
-// RISK SCORING (persisted) - guardian only
-// Stored in backend/risk-state.json
-// Optional env:
-//   RISK_TIMEZONE=Europe/Riga
-//   RISK_BLACKLIST=0xabc...,0xdef... (can be filled with more variants if needed!)
-// ------------------------------------------------------------
+// RISK SCORING (persisted) - guardian only, stored in backend/risk-state.json
+// Optional env: RISK_TIMEZONE=Europe/Riga and RISK_BLACKLIST=0xabc...,0xdef... (can be filled with more variants if needed!)
+
 const riskFile = path.join(__dirname, "risk-state.json");
 
 function loadRiskState() {
@@ -336,12 +313,11 @@ const GOV_POINTS = {
   5: { add: 25, label: "changeGuardian" },
 };
 
-// ------------------------------------------------------------
-// ✅ RISK SCORING v2
+// RISK SCORING v2
 // @notice Heuristic-based scoring engine for proposals.
 // @dev Inputs: Time of day, Value (ETH), Recipient (New/Blacklist), Method (Proxy/Upgrade).
 // Output: Score 0-100 and mapped Level (LOW/MEDIUM/HIGH).
-// ------------------------------------------------------------
+
 async function computeRisk(id) {
   const p = await fetchOnchainProposal(id);
 
@@ -379,9 +355,7 @@ async function computeRisk(id) {
   if (!stats.proposalTimes.includes(createdAt)) stats.proposalTimes.push(createdAt);
   stats.proposalTimes = stats.proposalTimes.slice(-50);
 
-  // ---------------------------
   // TIME SUBSCORE (0..15)
-  // ---------------------------
   let timePts = 0;
 
   const hour = getHourInTZ(createdAt);
@@ -409,9 +383,7 @@ async function computeRisk(id) {
   timePts = clamp(timePts, 0, 15);
   signals.time = { hour, tz: RISK_TIMEZONE, timeToEta };
 
-  // ---------------------------
   // BEHAVIOR SUBSCORE (0..15)
-  // ---------------------------
   let behaviorPts = 0;
   const start = now - 600; // last 10 minutes
   const proposalsLast10m = stats.proposalTimes.filter((t) => t >= start).length;
@@ -444,9 +416,7 @@ async function computeRisk(id) {
     add(reasons, "Behavior signal: threshold reached (actionable after delay).");
   }
 
-  // ---------------------------
   // GOVERNANCE BRANCH (usually HIGH by nature but can config can be changed if needed !)
-  // ---------------------------
   if (kind === 1) {
     let score = 60;
     add(reasons, "Function risk: governance proposal (high impact by design).");
@@ -488,16 +458,13 @@ async function computeRisk(id) {
     return out;
   }
 
-  // ---------------------------
-  // TX SUBSCORES (transaction)
-  // ---------------------------
-
-  // AMOUNT SUBSCORE (0..35)
+  // TX SUBSCORES (transaction) & AMOUNT SUBSCORE (0..35)
+  
   let amountPts = 0;
   const ETH = 1_000_000_000_000_000_000n;
   const valueWei = BigInt(p.value || "0");
 
-  // absolute tiers (more gentle than before)
+  // absolute tiers
   if (valueWei >= 5n * ETH) {
     amountPts = 35;
     add(reasons, "Amount risk: very high value (≥ 5 ETH).");
@@ -614,11 +581,9 @@ async function computeRisk(id) {
   // Mark recipient as seen AFTER scoring
   if (to) riskState.seenRecipients[to] = true;
 
-  // ---------------------------
   // FINAL COMBINE (scaled, not raw sum)
-  // ---------------------------
-  // Caps already applied:
-  // amount <= 35, recipient <= 25, function <= 25, behavior <= 15, time <= 15  -> max 115
+  // Caps already applied: amount <= 35, recipient <= 25, function <= 25, behavior <= 15, time <= 15  -> max 115
+  
   const raw = amountPts + recipientPts + functionPts + behaviorPts + timePts;
   const RAW_MAX = 115;
   let score = Math.round((raw / RAW_MAX) * 100);
@@ -650,9 +615,8 @@ function riskTextBlock(risk) {
   return `\nRISK: ${risk.level} (${risk.score}/100)\nReasons:\n- ${risk.reasons.join("\n- ")}\n`;
 }
 
-// ------------------------------------------------------------
 // NOTIFY HELPERS (owners vs guardian)
-// ------------------------------------------------------------
+
 async function emailOwners(subject, body) {
   const { owners } = normalizeRecipients();
   await sendEmailTo(owners, subject, body);
@@ -664,9 +628,8 @@ async function emailGuardian(subject, body, risk) {
   await sendEmailTo(guardian, `${subject} (Guardian view)`, body + riskTextBlock(risk));
 }
 
-// ------------------------------------------------------------
-// schedule “executable soon” email at ETA - 10 min
-// ------------------------------------------------------------
+// Schedule “executable soon” email at ETA - 10 min
+
 async function scheduleEtaWarning(id, eta) {
   const warnAt = Number(eta) - 600;
   if (!warnAt || warnAt <= 0) return;
@@ -773,9 +736,9 @@ async function maybeSendThresholdEmail(id) {
   }
 }
 
-// ------------------------------------------------------------
+
 // CONTRACT EVENT LISTENERS
-// ------------------------------------------------------------
+
 console.log("👂 Listening to smart contract events...");
 
 function ensureProposerStats(proposer) {
@@ -894,11 +857,7 @@ contract.on("ProposalExecuted", async (id, executor) => {
   await computeRisk(id);
 });
 
-// ------------------------------------------------------------
-// ROUTES
-// ------------------------------------------------------------
 
-// HEALTH CHECK
 app.get("/status", (req, res) => {
   res.json({ ok: true, message: "Backend is running." });
 });
@@ -914,7 +873,7 @@ app.post("/resume", async (req, res) => {
   }
 });
 
-// ✅ FIXED CONTRACT INFO (NO NOTIFY_EMAILS BUG ANYMORE)
+// ✅ FIXED CONTRACT INFO (NO NOTIFY_EMAILS BUG ANYMORE soon will be released more 3rd party apps integration)
 app.get("/info", async (req, res) => {
   try {
     const threshold = await contract.threshold();
@@ -970,9 +929,7 @@ app.get("/risk/:id", async (req, res) => {
   }
 });
 
-// RETURN SINGLE PROPOSAL
-// - Everyone gets proposal details
-// - Guardian (with signature headers) also gets "risk"
+// RETURN SINGLE PROPOSAL = Everyone gets proposal details & Guardian (with signature headers) also gets "risk"
 app.get("/proposals/:id", async (req, res) => {
   try {
     const id = req.params.id;
@@ -1022,9 +979,7 @@ app.post("/propose", async (req, res) => {
   }
 });
 
-// ------------------------------------------------------------
 // START SERVER
-// ------------------------------------------------------------
 const PORT = process.env.PORT || 4000;
 app.listen(PORT, () => {
   console.log(`🚀 Backend running at http://localhost:${PORT}`);
